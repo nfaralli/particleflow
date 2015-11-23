@@ -1,9 +1,20 @@
 #pragma version(1)
 #pragma rs java_package_name(com.nfaralli.particleflow)
 
-// Saturation and Value components of the particles color.
-#define SAT 0.7f
-#define VAL 1.0f
+// Colors of slow and fast particles. Particles colors are interpolated based on these two colors
+// and hueDirection.
+// TODO: put HSV in a float4
+float slowHue;
+float slowSaturation;
+float slowValue;
+float fastHue;
+float fastSaturation;
+float fastValue;
+int hueDirection;  // 0 for clockwise, 1 for counterclockwise
+
+// Force coefficients.
+float f01AttractionCoef;
+float f01DragCoef;
 
 // Screen resolution. Should be set before calling initParticles.
 float width = 100.0f;
@@ -21,7 +32,7 @@ float4 *color;
 
 /**
  * Transforms HSV components into RGBA components.
- * H, S, and V must be within [0, 1) (e.g. H=0.5 -> 180 degrees = Cyan)
+ * S and V must be within [0, 1] and H must be within [0, 1) (e.g. H=0.5 -> 180 degrees = Cyan).
  * no check performed on H, S, and V.
  * R, G, and B are within [0, 1] and A=1
  */
@@ -66,18 +77,53 @@ static float4 hsv2rgba(float h, float s, float v) {
 }
 
 /**
- * Get a Hue value based on a velocity vector v.
- * Hue will range from blue (0.6667) for low velocity
- * to red (0.0) for high velocity using a logarithmic scale.
+ * Get the hue based on coef, which must be within [0, 1].
+ * The returned value will be within [0, 1) (which corresponds to the usual range [0, 360)).
  */
-static float getHue(float2 v) {
+static float getHue(float coef) {
     float hue;
-    hue = log(v.x * v.x + v.y * v.y + 1) / 4.5f;  // Use + 1 to have positive log values.
-    if(hue > 1.0f) {
-        hue = 1.0f;
+    float sh = slowHue;
+    float fh = fastHue;
+    if (sh < fh && hueDirection == 0) {
+        sh += 1;
+    } else if (sh > fh && hueDirection == 1) {
+        fh += 1;
     }
-    hue = 2.0f / 3.0f * (1.0f - hue);
+    hue = (1 - coef) * sh + coef * fh;
+    if (hue >= 1) {
+        hue -= 1;
+    }
     return hue;
+}
+
+/**
+ * Get the saturation based on coef, which must be within [0, 1].
+ * The returned value will be within [0, 1].
+ */
+static float getSaturation(float coef) {
+    return (1 - coef) * slowSaturation + coef * fastSaturation;
+}
+
+
+/**
+ * Get the value based on coef, which must be within [0, 1].
+ * The returned value will be within [0, 1].
+ */
+static float getValue(float coef) {
+    return (1 - coef) * slowValue + coef * fastValue;
+}
+
+/**
+ * Returns a coefficient in the range [0, 1] based on the speed v.
+ * 0 corresponds to low speeds and 1 corresponds to high speeds.
+ */
+static float getSpeedCoef(float2 v) {
+    float coef;
+    coef = log(v.x * v.x + v.y * v.y + 1) / 4.5f;  // Use + 1 to have positive log values.
+    if(coef > 1.0f) {
+        coef = 1.0f;
+    }
+    return coef;
 }
 
 /**
@@ -92,6 +138,7 @@ void initParticles()
     float4 *c = color;
     float radius = sqrt(width*width + height*height) / 2;
     float r, theta;
+    float speedCoef;
     for (int i = 0; i < size; i++, pt++, d++, c++) {
     	r = radius * sqrt(rsRand(1.f));
     	theta = rsRand(6.28318530718f);
@@ -99,7 +146,8 @@ void initParticles()
     	pt->y = (height/2) + r*sin(theta);
     	d->x = 0;
     	d->y = 0;
-    	*c = hsv2rgba(getHue(*d), SAT, VAL);
+    	speedCoef = getSpeedCoef(*d);
+    	*c = hsv2rgba(getHue(speedCoef), getSaturation(speedCoef), getValue(speedCoef));
     }
 }
 
@@ -110,6 +158,8 @@ void initParticles()
  */
 void __attribute__((kernel)) updateParticles(int index) {
     int numTouch = rsAllocationGetDimX(rsGetAllocation(gTouch));
+    float speedCoef, theta;
+    float diffSqNorm;
     float2 diff, acc;
     float2 *pt = position + index;
     float2 *d = delta + index;
@@ -118,13 +168,19 @@ void __attribute__((kernel)) updateParticles(int index) {
     for(int i=0; i<numTouch; i++){
         if (gTouch[i].x >=0) {
             diff = gTouch[i] - *pt;
-            acc += (100.f/(diff.x * diff.x + diff.y * diff.y)) * diff;
+            diffSqNorm = diff.x * diff.x + diff.y * diff.y;
+            if (diffSqNorm < 0.1f) {
+                theta = rsRand(6.28318530718f);
+                diff.x = cos(theta);
+                diff.y = sin(theta);
+                diffSqNorm = 1;
+            }
+            acc += (f01AttractionCoef / diffSqNorm) * diff;
         }
     }
     *d += acc;
     *pt += *d;
-	if(pt->x>=0 && pt->x<=width && pt->y>=0 && pt->y<=height){
-        *c = hsv2rgba(getHue(*d), SAT, VAL);
-    }
-    *d *= 0.96f;
+    speedCoef = getSpeedCoef(*d);
+    *c = hsv2rgba(getHue(speedCoef), getSaturation(speedCoef), getValue(speedCoef));
+    *d *= f01DragCoef;
 }

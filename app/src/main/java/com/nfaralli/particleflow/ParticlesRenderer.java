@@ -9,6 +9,8 @@ import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
@@ -25,9 +27,6 @@ import android.support.v8.renderscript.*;
 public class ParticlesRenderer implements GLSurfaceView.Renderer {
 
     private static final String TAG = "ParticlesRenderer";
-
-    private static final int PART_COUNT = 50000; // Count of particles
-    public static final int NUM_TOUCH = 5; // Number of screen touches taken into account
     
     private FloatBuffer mPointVertices;
     private FloatBuffer mPointColors;
@@ -37,10 +36,13 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
     private final float[] mProjectionMatrix = new float[16];
     private final float[] mViewMatrix = new float[16];
 
+    private SharedPreferences mPrefs;
+
     private int mProgram;
     private int maPositionHandle;
     private int maColorHandle;
     private int muMVPMatrixHandle;
+    private int muPointSizeHandle;
     private int mWidth;
     private int mHeight;
     
@@ -53,17 +55,22 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
     private Allocation position;
     private Allocation delta;
     private Allocation color;
-    private float[] touchPos = new float[2*NUM_TOUCH];
-    private float[] pos = new float[2*PART_COUNT];
-    private float[] col = new float[4*PART_COUNT];
+    private int mNumTouch;
+    private int mPartCount;
+    private int mParticleSize;
+    private float[] touchPos;
+    private float[] pos;
+    private float[] col;
 
     private final String mVertexShader =
         "uniform mat4 uMVPMatrix;\n" +
+        "uniform float uPointSize;" +
         "attribute vec4 aPosition;\n" +
         "attribute vec4 aColor;\n" +
         "varying vec4 vColor;\n" +
         "void main() {\n" +
         "  gl_Position = uMVPMatrix * aPosition;\n" +
+        "  gl_PointSize = uPointSize;\n" +
         "  vColor = aColor;\n" +
         "}\n";	
 
@@ -75,17 +82,48 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
         "}\n";
     
     public ParticlesRenderer(Context context) {
-        mPointVertices = ByteBuffer.allocateDirect(PART_COUNT * 2 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
-        mPointColors = ByteBuffer.allocateDirect(PART_COUNT * 4 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        mPrefs = context.getSharedPreferences(ParticlesSurfaceView.SHARED_PREFS_NAME,
+                Context.MODE_PRIVATE);
+        mPartCount = mPrefs.getInt("NumParticles", ParticlesSurfaceView.DEFAULT_NUM_PARTICLES);
+        mParticleSize = mPrefs.getInt("ParticleSize", ParticlesSurfaceView.DEFAULT_PARTICLE_SIZE);
+        mNumTouch = mPrefs.getInt("NumAttPoints", ParticlesSurfaceView.DEFAULT_MAX_NUM_ATT_POINTS);
+        touchPos = new float[2 * mNumTouch];
+        pos = new float[2 * mPartCount];
+        col = new float[4 * mPartCount];
+        mPointVertices = ByteBuffer.allocateDirect(mPartCount * 2 * 4)
+                .order(ByteOrder.nativeOrder()).asFloatBuffer();
+        mPointColors = ByteBuffer.allocateDirect(mPartCount * 4 * 4)
+                .order(ByteOrder.nativeOrder()).asFloatBuffer();
         mRS = RenderScript.create(context);
         mScript = new ScriptC_particleflow(mRS);
+    }
+
+    public void onPrefsChanged() {
+        mPartCount = mPrefs.getInt("NumParticles", ParticlesSurfaceView.DEFAULT_NUM_PARTICLES);
+        mParticleSize = mPrefs.getInt("ParticleSize", ParticlesSurfaceView.DEFAULT_PARTICLE_SIZE);
+        mNumTouch = mPrefs.getInt("NumAttPoints", ParticlesSurfaceView.DEFAULT_MAX_NUM_ATT_POINTS);
+        touchPos = new float[2 * mNumTouch];
+        pos = new float[2 * mPartCount];
+        col = new float[4 * mPartCount];
+        mPointVertices = ByteBuffer.allocateDirect(mPartCount * 2 * 4)
+                .order(ByteOrder.nativeOrder()).asFloatBuffer();
+        mPointColors = ByteBuffer.allocateDirect(mPartCount * 4 * 4)
+                .order(ByteOrder.nativeOrder()).asFloatBuffer();
+        int bgColor = mPrefs.getInt("BGColor", ParticlesSurfaceView.DEFAULT_BG_COLOR);
+        float bgRed = Color.red(bgColor) / 255.f;
+        float bgGreen = Color.green(bgColor) / 255.f;
+        float bgBlue = Color.blue(bgColor) / 255.f;
+        GLES20.glClearColor(bgRed, bgGreen, bgBlue, 1.0f);
+
+        initialized = false;
+        onSurfaceChanged(null, mWidth, mHeight);
     }
     
     // Set the position of the pointer 'index'.
     // This does NOT update Allocation touch (i.e. it does not update the script).
     // Use syncTouch() to update the Allocation touch with these new coordinates.
     public void setTouch(int index, float x, float y){
-    	if(index >= NUM_TOUCH) {
+    	if(index >= mNumTouch) {
     		return;
     	}
     	index *=2;
@@ -108,10 +146,13 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
      */
     @Override
     public void onSurfaceCreated(GL10 unused, EGLConfig config) {
-
         // Set the background frame color
-        GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        
+        int bgColor = mPrefs.getInt("BGColor", ParticlesSurfaceView.DEFAULT_BG_COLOR);
+        float bgRed = Color.red(bgColor) / 255.f;
+        float bgGreen = Color.green(bgColor) / 255.f;
+        float bgBlue = Color.blue(bgColor) / 255.f;
+        GLES20.glClearColor(bgRed, bgGreen, bgBlue, 1.0f);
+
         mProgram = createProgram(mVertexShader, mFragmentShader);
         if (mProgram == 0) {
             return;
@@ -130,6 +171,11 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
         checkGlError("glGetUniformLocation uMVPMatrix");
         if (muMVPMatrixHandle == -1) {
             throw new RuntimeException("Could not get uniform location for uMVPMatrix");
+        }
+
+        muPointSizeHandle = GLES20.glGetUniformLocation(mProgram, "uPointSize");
+        if (muPointSizeHandle == -1) {
+            throw new RuntimeException("Could not get uniform location for uPointSize");
         }
     }
 
@@ -155,17 +201,32 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
         	return; // onSurfaceChanged called after resuming the activity. check before reinitialize.
         mScript.set_width(mWidth);
         mScript.set_height(mHeight);
+        float hsv[] = new float[3];
+        Color.colorToHSV(mPrefs.getInt("SlowColor", ParticlesSurfaceView.DEFAULT_SLOW_COLOR), hsv);
+        mScript.set_slowHue(hsv[0] / 360.f);
+        mScript.set_slowSaturation(hsv[1]);
+        mScript.set_slowValue(hsv[2]);
+        Color.colorToHSV(mPrefs.getInt("FastColor", ParticlesSurfaceView.DEFAULT_FAST_COLOR), hsv);
+        mScript.set_fastHue(hsv[0] / 360.f);
+        mScript.set_fastSaturation(hsv[1]);
+        mScript.set_fastValue(hsv[2]);
+        mScript.set_hueDirection(mPrefs.getInt("HueDirection",
+                ParticlesSurfaceView.DEFAULT_HUE_DIRECTION));
+        mScript.set_f01AttractionCoef(mPrefs.getInt("F01Attraction",
+                ParticlesSurfaceView.DEFAULT_F01_ATTRACTION_COEF));
+        mScript.set_f01DragCoef(1 - mPrefs.getInt("F01Drag",
+                ParticlesSurfaceView.DEFAULT_F01_DRAG_COEF)/100.f);
         if(!initialized) {
-            int indices_[] = new int[PART_COUNT];
-            indices = Allocation.createSized(mRS, Element.I32(mRS), PART_COUNT);
-            for(int i=0; i<PART_COUNT; i++) {
+            int indices_[] = new int[mPartCount];
+            indices = Allocation.createSized(mRS, Element.I32(mRS), mPartCount);
+            for(int i=0; i<mPartCount; i++) {
             	indices_[i] = i;
             }
             indices.copyFrom(indices_);
-            touch = Allocation.createSized(mRS, Element.F32_2(mRS), NUM_TOUCH);
-            position = Allocation.createSized(mRS, Element.F32_2(mRS), PART_COUNT);
-            delta = Allocation.createSized(mRS, Element.F32_2(mRS), PART_COUNT);
-            color = Allocation.createSized(mRS, Element.F32_4(mRS), PART_COUNT);
+            touch = Allocation.createSized(mRS, Element.F32_2(mRS), mNumTouch);
+            position = Allocation.createSized(mRS, Element.F32_2(mRS), mPartCount);
+            delta = Allocation.createSized(mRS, Element.F32_2(mRS), mPartCount);
+            color = Allocation.createSized(mRS, Element.F32_4(mRS), mPartCount);
             mScript.bind_gTouch(touch);
             mScript.bind_position(position);
             mScript.bind_delta(delta);
@@ -173,14 +234,14 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
             initialized = true;
         }
         float l = (mWidth < mHeight ? mWidth : mHeight) / 3;
-        setTouch(0, mWidth/2, mHeight/2 + (NUM_TOUCH==1?0:l));
-        for(int i=1; i<NUM_TOUCH; i++){
+        setTouch(0, mWidth / 2, mHeight / 2 + (mNumTouch == 1 ? 0 : l));
+        for(int i=1; i<mNumTouch; i++){
         	setTouch(i,
-        			(float)(mWidth/2 + l*Math.sin(i*2*Math.PI/NUM_TOUCH)),
-        			(float)(mHeight/2 + l*Math.cos(i*2*Math.PI/NUM_TOUCH)));
+        			(float)(mWidth/2 + l*Math.sin(i*2*Math.PI/mNumTouch)),
+        			(float)(mHeight/2 + l*Math.cos(i*2*Math.PI/mNumTouch)));
         }
         syncTouch();
-        
+
         mScript.invoke_initParticles();
     }
 
@@ -189,14 +250,14 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
      */
     @Override
     public void onDrawFrame(GL10 unused) {
-
-        // Draw background color
+        // Draw background color.
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
         
         GLES20.glUseProgram(mProgram);
         checkGlError("glUseProgram");
  
         GLES20.glUniformMatrix4fv(muMVPMatrixHandle, 1, false, mMVPMatrix, 0);
+        GLES20.glUniform1f(muPointSizeHandle, mParticleSize);
 
         mScript.forEach_updateParticles(indices);
         // There might be a better way to copy an Allocation to a FloatBuffer...
@@ -216,7 +277,7 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
         checkGlError("glVertexAttribPointer maColor");
         GLES20.glEnableVertexAttribArray(maColorHandle);
         
-        GLES20.glDrawArrays(GLES20.GL_POINTS, 0, PART_COUNT);
+        GLES20.glDrawArrays(GLES20.GL_POINTS, 0, mPartCount);
         checkGlError("glDrawArrays");
     }
 

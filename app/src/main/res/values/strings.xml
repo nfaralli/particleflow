@@ -2,4 +2,28 @@
 
     <string name="app_name">Particle Flow</string>
 
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Strings for the Settings Dialog. -->
+    <string name="settings_title">Settings</string>
+    <string name="num_particles">Number of Particles:</string>
+    <string name="particle_size">Particle Size:</string>
+    <string name="num_att_points">Max Number of Attraction Points:</string>
+    <string name="bg_color">Background Color:</string>
+    <string name="particles_colors">Particles Color:</string>
+    <string name="slow_particles_colors">Slow Particles:</string>
+    <string name="fast_particles_colors">Fast Particles:</string>
+    <string name="hue_direction">Hue Direction:</string>
+    <string-array name="hue_directions">
+        <item>Clockwise</item>
+        <item>Counterclockwise</item>
+    </string-array>
+    <string name="force_coefficients">Force Coefficients:</string>
+    <string name="force01_attraction">Attraction:</string>
+    <string name="force01_drag">Drag:</string>
+    <string name="reset">Reset</string>
+    <string name="settings_hint">
+        Hint: click on the top right corner to display the Settings icon.</string>
+
 </resources>

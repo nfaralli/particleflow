@@ -8,7 +8,7 @@ android {
         applicationId "com.nfaralli.particleflow"
         minSdkVersion 8
         targetSdkVersion 22
-        renderscriptTargetApi 19
+        renderscriptTargetApi 18
         renderscriptSupportModeEnabled true
     }
 
