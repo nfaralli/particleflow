@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
                 .setIcon(R.drawable.gear_icon_00)
                 .setView(mSettingsView)
                 .setPositiveButton(R.string.ok, new DialogInterface.OnClickListener() {
+                    @Override
                     public void onClick(DialogInterface dialog, int id) {
                         mSettingsView.saveValues();
                         mGLView.onPrefsChanged();
@@ -76,7 +77,16 @@ public class MainActivity extends Activity {
                     }
                 })
                 .setNegativeButton(R.string.cancel, new DialogInterface.OnClickListener() {
+                    @Override
                     public void onClick(DialogInterface dialog, int id) {
+                        // reset the dialog with its previous values.
+                        mSettingsView.loadValues();
+                        mGLView.onResume();
+                    }
+                })
+                .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                    @Override
+                    public void onCancel(DialogInterface dialog) {
                         // reset the dialog with its previous values.
                         mSettingsView.loadValues();
                         mGLView.onResume();

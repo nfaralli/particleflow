@@ -123,6 +123,12 @@ public class SettingsView extends FrameLayout {
     }
 
     public void saveValues() {
+        // By clearing the focus first, we force the EditText which has the focus to lose it and
+        // therefore to validate its text before saving its value.
+        View focusedChild = getFocusedChild();
+        if (focusedChild!= null) {
+            focusedChild.clearFocus();
+        }
         SharedPreferences.Editor editor = mPrefs.edit();
         editor.putInt("NumParticles", Integer.parseInt(mNumParticles.getText().toString()));
         editor.putInt("ParticleSize", Integer.parseInt(mParticleSize.getText().toString()));

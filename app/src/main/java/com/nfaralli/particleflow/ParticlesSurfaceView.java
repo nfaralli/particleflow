@@ -54,7 +54,11 @@ public class ParticlesSurfaceView extends GLSurfaceView {
         // Get the shared preferences and create the counter array.
         mPrefs = context.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE);
         mCount = new int[mPrefs.getInt("NumAttPoints", DEFAULT_MAX_NUM_ATT_POINTS)];
+    }
 
+    @Override
+    public void onResume() {
+        super.onResume();
         // use sticky immersive mode (available only for API 19 and above).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             this.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
