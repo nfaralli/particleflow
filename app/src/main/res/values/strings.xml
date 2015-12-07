@@ -26,4 +26,8 @@
     <string name="settings_hint">
         Hint: click on the top right corner to display the Settings icon.</string>
 
+    <string name="wallpaper_description">Particle Flow Wallpaper</string>
+    <string name="wallpaper_settings">Parameters can be changed later on in the main app
+        (tap on the top right corner to display the settings icon).
+    </string>
 </resources>

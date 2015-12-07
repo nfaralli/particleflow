@@ -80,45 +80,50 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
         "void main() {\n" +
         "  gl_FragColor = vColor;\n" +
         "}\n";
-    
+
+    /**
+     * Public constructor.
+     * initScript is not called here as it will be called in onSurfaceChanged later on.
+     */
     public ParticlesRenderer(Context context) {
         mPrefs = context.getSharedPreferences(ParticlesSurfaceView.SHARED_PREFS_NAME,
                 Context.MODE_PRIVATE);
-        mPartCount = mPrefs.getInt("NumParticles", ParticlesSurfaceView.DEFAULT_NUM_PARTICLES);
-        mParticleSize = mPrefs.getInt("ParticleSize", ParticlesSurfaceView.DEFAULT_PARTICLE_SIZE);
-        mNumTouch = mPrefs.getInt("NumAttPoints", ParticlesSurfaceView.DEFAULT_MAX_NUM_ATT_POINTS);
-        touchPos = new float[2 * mNumTouch];
-        pos = new float[2 * mPartCount];
-        col = new float[4 * mPartCount];
-        mPointVertices = ByteBuffer.allocateDirect(mPartCount * 2 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
-        mPointColors = ByteBuffer.allocateDirect(mPartCount * 4 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
         mRS = RenderScript.create(context);
         mScript = new ScriptC_particleflow(mRS);
+        init();
     }
 
+    /**
+     * Should be called when preferences are changed.
+     */
     public void onPrefsChanged() {
-        mPartCount = mPrefs.getInt("NumParticles", ParticlesSurfaceView.DEFAULT_NUM_PARTICLES);
-        mParticleSize = mPrefs.getInt("ParticleSize", ParticlesSurfaceView.DEFAULT_PARTICLE_SIZE);
-        mNumTouch = mPrefs.getInt("NumAttPoints", ParticlesSurfaceView.DEFAULT_MAX_NUM_ATT_POINTS);
-        touchPos = new float[2 * mNumTouch];
-        pos = new float[2 * mPartCount];
-        col = new float[4 * mPartCount];
-        mPointVertices = ByteBuffer.allocateDirect(mPartCount * 2 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
-        mPointColors = ByteBuffer.allocateDirect(mPartCount * 4 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
+        init();
+        initScript(true);
         int bgColor = mPrefs.getInt("BGColor", ParticlesSurfaceView.DEFAULT_BG_COLOR);
         float bgRed = Color.red(bgColor) / 255.f;
         float bgGreen = Color.green(bgColor) / 255.f;
         float bgBlue = Color.blue(bgColor) / 255.f;
         GLES20.glClearColor(bgRed, bgGreen, bgBlue, 1.0f);
-
-        initialized = false;
-        onSurfaceChanged(null, mWidth, mHeight);
     }
-    
+
+    /**
+     * Initialization of member variables.
+     * Variables which interact directly with the script (e.g. allocations) are initialized in
+     * initScript.
+     */
+    private void init() {
+        mPartCount = mPrefs.getInt("NumParticles", ParticlesSurfaceView.DEFAULT_NUM_PARTICLES);
+        mParticleSize = mPrefs.getInt("ParticleSize", ParticlesSurfaceView.DEFAULT_PARTICLE_SIZE);
+        mNumTouch = mPrefs.getInt("NumAttPoints", ParticlesSurfaceView.DEFAULT_MAX_NUM_ATT_POINTS);
+        touchPos = new float[2 * mNumTouch];
+        pos = new float[2 * mPartCount];
+        col = new float[4 * mPartCount];
+        mPointVertices = ByteBuffer.allocateDirect(mPartCount * 2 * 4)
+                .order(ByteOrder.nativeOrder()).asFloatBuffer();
+        mPointColors = ByteBuffer.allocateDirect(mPartCount * 4 * 4)
+                .order(ByteOrder.nativeOrder()).asFloatBuffer();
+    }
+
     // Set the position of the pointer 'index'.
     // This does NOT update Allocation touch (i.e. it does not update the script).
     // Use syncTouch() to update the Allocation touch with these new coordinates.
@@ -199,6 +204,15 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
         
         if(mWidth == mScript.get_width() && mHeight == mScript.get_height() && initialized)
         	return; // onSurfaceChanged called after resuming the activity. check before reinitialize.
+        initScript(false);
+    }
+
+    /**
+     * Initialize all the scrip parameters.
+     *
+     * @param forceAllocationsInit: set to true to force (re)initializing the Allocations.
+     */
+    private void initScript(boolean forceAllocationsInit) {
         mScript.set_width(mWidth);
         mScript.set_height(mHeight);
         float hsv[] = new float[3];
@@ -215,34 +229,54 @@ public class ParticlesRenderer implements GLSurfaceView.Renderer {
         mScript.set_f01AttractionCoef(mPrefs.getInt("F01Attraction",
                 ParticlesSurfaceView.DEFAULT_F01_ATTRACTION_COEF));
         mScript.set_f01DragCoef(1 - mPrefs.getInt("F01Drag",
-                ParticlesSurfaceView.DEFAULT_F01_DRAG_COEF)/100.f);
-        if(!initialized) {
-            int indices_[] = new int[mPartCount];
-            indices = Allocation.createSized(mRS, Element.I32(mRS), mPartCount);
-            for(int i=0; i<mPartCount; i++) {
-            	indices_[i] = i;
-            }
-            indices.copyFrom(indices_);
-            touch = Allocation.createSized(mRS, Element.F32_2(mRS), mNumTouch);
-            position = Allocation.createSized(mRS, Element.F32_2(mRS), mPartCount);
-            delta = Allocation.createSized(mRS, Element.F32_2(mRS), mPartCount);
-            color = Allocation.createSized(mRS, Element.F32_4(mRS), mPartCount);
-            mScript.bind_gTouch(touch);
-            mScript.bind_position(position);
-            mScript.bind_delta(delta);
-            mScript.bind_color(color);
-            initialized = true;
-        }
-        float l = (mWidth < mHeight ? mWidth : mHeight) / 3;
-        setTouch(0, mWidth / 2, mHeight / 2 + (mNumTouch == 1 ? 0 : l));
-        for(int i=1; i<mNumTouch; i++){
-        	setTouch(i,
-        			(float)(mWidth/2 + l*Math.sin(i*2*Math.PI/mNumTouch)),
-        			(float)(mHeight/2 + l*Math.cos(i*2*Math.PI/mNumTouch)));
-        }
-        syncTouch();
+                ParticlesSurfaceView.DEFAULT_F01_DRAG_COEF) / 100.f);
+        initAllocations(forceAllocationsInit);
+        resetAttractionPoints();
+    }
 
-        mScript.invoke_initParticles();
+    /**
+     * Initialize the Allocations used by the script. If it was already initialized and forceInit is
+     * set to false, then return immediately.
+     *
+     * @param forceInit: set to true to force (re)initializing the Allocations.
+     */
+    private void initAllocations(boolean forceInit) {
+        if(initialized && !forceInit) {
+            return;
+        }
+        int indices_[] = new int[mPartCount];
+        indices = Allocation.createSized(mRS, Element.I32(mRS), mPartCount);
+        for(int i=0; i<mPartCount; i++) {
+            indices_[i] = i;
+        }
+        indices.copyFrom(indices_);
+        touch = Allocation.createSized(mRS, Element.F32_2(mRS), mNumTouch);
+        position = Allocation.createSized(mRS, Element.F32_2(mRS), mPartCount);
+        delta = Allocation.createSized(mRS, Element.F32_2(mRS), mPartCount);
+        color = Allocation.createSized(mRS, Element.F32_4(mRS), mPartCount);
+        mScript.bind_gTouch(touch);
+        mScript.bind_position(position);
+        mScript.bind_delta(delta);
+        mScript.bind_color(color);
+        initialized = true;
+    }
+
+    /**
+     * Reset the attraction points and particles. Allocations must have been initialized previously
+     * by initAllocations.
+     */
+    public void resetAttractionPoints() {
+        if (initialized && mWidth > 0 && mHeight > 0) {
+            float l = (mWidth < mHeight ? mWidth : mHeight) / 3;
+            setTouch(0, mWidth / 2, mHeight / 2 + (mNumTouch == 1 ? 0 : l));
+            for (int i = 1; i < mNumTouch; i++) {
+                setTouch(i,
+                        (float) (mWidth / 2 + l * Math.sin(i * 2 * Math.PI / mNumTouch)),
+                        (float) (mHeight / 2 + l * Math.cos(i * 2 * Math.PI / mNumTouch)));
+            }
+            syncTouch();
+            mScript.invoke_initParticles();
+        }
     }
 
     /**

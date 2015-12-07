@@ -72,7 +72,6 @@ public class MainActivity extends Activity {
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         mSettingsView.saveValues();
-                        mGLView.onPrefsChanged();
                         mGLView.onResume();
                     }
                 })

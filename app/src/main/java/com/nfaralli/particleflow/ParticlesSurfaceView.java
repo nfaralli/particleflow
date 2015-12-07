@@ -13,7 +13,8 @@ import android.view.View;
  * This view creates and set its renderer (in charge of drawing the particles)
  * and is in charge of capturing the touch events (to move the attraction points).
  */
-public class ParticlesSurfaceView extends GLSurfaceView {
+public class ParticlesSurfaceView extends GLSurfaceView
+        implements SharedPreferences.OnSharedPreferenceChangeListener {
 
     public static final String SHARED_PREFS_NAME="particleFlowPrefs";
     public static final int DEFAULT_NUM_PARTICLES = 50000;
@@ -37,7 +38,7 @@ public class ParticlesSurfaceView extends GLSurfaceView {
     // This is necessary when moving several attraction points simultaneously and lifting all the
     // fingers at once, which usually results in several touch events, not just one.
     private int mCount[];
-    private SharedPreferences mPrefs;
+    private final SharedPreferences mPrefs;
 
     public ParticlesSurfaceView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -45,6 +46,8 @@ public class ParticlesSurfaceView extends GLSurfaceView {
         // Create an OpenGL ES 2.0 context.
         // Don't forget to set the following line in the manifest:
         // <uses-feature android:glEsVersion="0x00020000" android:required="true" />
+        // Also, don't use setPreserveEGLContextOnPause, or double check that a change to the
+        // background color via the settings menu still works.
         setEGLContextClientVersion(2);
 
         // Create and set the Renderer for drawing on the GLSurfaceView
@@ -53,6 +56,7 @@ public class ParticlesSurfaceView extends GLSurfaceView {
 
         // Get the shared preferences and create the counter array.
         mPrefs = context.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE);
+        mPrefs.registerOnSharedPreferenceChangeListener(this);
         mCount = new int[mPrefs.getInt("NumAttPoints", DEFAULT_MAX_NUM_ATT_POINTS)];
     }
 
@@ -106,8 +110,16 @@ public class ParticlesSurfaceView extends GLSurfaceView {
         return true;
     }
 
-    public void onPrefsChanged() {
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences prefs, String key) {
+        if (key == "ShowSettingsHint") {
+            return;
+        }
         mCount = new int[mPrefs.getInt("NumAttPoints", DEFAULT_MAX_NUM_ATT_POINTS)];
         mRenderer.onPrefsChanged();
+    }
+
+    public void resetAttractionPoints(){
+        mRenderer.resetAttractionPoints();
     }
 }
